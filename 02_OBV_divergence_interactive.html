@@ -5,7 +5,7 @@ h1{font-size:18px;font-weight:500;margin-bottom:2px}.sub{color:#777;font-size:13
 .ctrl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#f6f6f4;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:13px}
 .ctrl label{color:#555}.ctrl input[type=number]{width:60px;padding:4px 6px}
 .grp{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:6px}
-.grp-lb{background:#e4ebf6}.grp-rg{background:#e0efea}
+.grp-lb{background:#e4ebf6}
 #pt{flex:1;min-width:180px}
 button,select{font:inherit;padding:5px 10px;border:1px solid #ccc;background:#fff;border-radius:6px;cursor:pointer}
 button:hover{background:#f0f0f0}
@@ -27,17 +27,16 @@ button:hover{background:#f0f0f0}
 <button id="reset">Reset zoom</button></div>
 <div class="ctrl">
 <span class="grp grp-lb"><label>Lookback</label><input type="number" id="mx" value="70" min="2"><span>to</span><input type="number" id="mn" value="15" min="1"><span>bars</span></span>
-<span class="grp grp-rg"><label>inRange</label><input type="number" id="rl" value="3" min="0"><span>to</span><input type="number" id="ru" value="70" min="1"><span>bars</span></span></div>
+<label style="margin-left:8px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="strict"><span>Strict (price must pivot too)</span></label></div>
 <div class="hint">Zoom: mouse-wheel or drag a box (left button) · Scroll: hold the right mouse button and drag left/right · both panels stay aligned.</div>
 <div class="legend">
 <span><span class="sw" style="background:#4472c4"></span>Price</span>
 <span><span class="sw" style="background:#7030a0"></span>OBV Oscillator (EMA3−EMA20)</span>
 <span><span class="sw" style="height:10px;width:14px;border-radius:2px;background:rgba(232,193,61,0.55)"></span>Buffer</span>
 <span><span class="sw" style="height:10px;width:14px;border-radius:2px;background:rgba(110,170,230,0.45)"></span>Search window</span>
-<span><span class="sw" style="height:12px;width:14px;border-left:2px dashed rgba(20,150,130,0.95);border-right:2px dashed rgba(20,150,130,0.95)"></span>inRange band</span>
 <span><span class="sw" style="background:#c00000"></span>Bearish</span>
 <span><span class="sw" style="background:#2e8b2e"></span>Bullish</span>
-<span><span class="sw" style="width:10px;height:10px;border-radius:2px;transform:rotate(45deg);background:#e69500"></span>Oszc. pivot (min/max)</span></div>
+<span><span class="sw" style="width:10px;height:10px;border-radius:2px;transform:rotate(45deg);background:#e69500"></span>Reference / anchor pivot</span></div>
 <div class="box"><canvas id="c1"></canvas></div>
 <div class="box" style="margin-top:6px"><canvas id="c2"></canvas></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
@@ -60,18 +59,7 @@ const bandPlugin={id:'band',beforeDatasetsDraw(c){const{ctx,chartArea:a,scales:{
   ctx.font='bold 12px Arial';ctx.fillText(name,(x1+x2)/2,a.top+4);
   ctx.font='11px Arial';ctx.fillText((i2-i1)+' bars',(x1+x2)/2,a.top+19);ctx.restore();};
  fill(band.lo,band.mid,'rgba(110,170,230,0.22)','rgba(110,170,230,0.6)','#1e5fa0','Search window');
- fill(band.mid,band.hi,'rgba(232,193,61,0.28)','rgba(232,193,61,0.7)','#9a7400','Buffer');
- // inRange filter — a single green band whose BOTTOM is aligned with the chart's lower border (the
- // same line as the search window / buffer) so it never covers the time-axis labels. It still
- // overshoots the TOP so the two-line label sits above the chart, clear of the other labels.
- // The reference oscillator extreme must lie RANGE_LOWER..RANGE_UPPER bars back from the current point.
- if(band.rNear>band.rFar){const x1=x.getPixelForValue(band.rFar),x2=x.getPixelForValue(band.rNear),rw=x2-x1;
-  const ov=28,ry=a.top-ov,rh=(a.bottom-a.top)+ov;ctx.save();
-  ctx.fillStyle='rgba(20,150,130,0.08)';ctx.fillRect(x1,ry,rw,rh);
-  ctx.strokeStyle='rgba(20,150,130,0.6)';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.strokeRect(x1,ry,rw,rh);
-  ctx.setLineDash([]);ctx.fillStyle='#0c6b5a';ctx.textAlign='center';ctx.textBaseline='top';
-  ctx.font='bold 12px Arial';ctx.fillText('inRange',(x1+x2)/2,a.top-26);
-  ctx.font='11px Arial';ctx.fillText((+rl.value)+'–'+(+ru.value)+' bars',(x1+x2)/2,a.top-11);ctx.restore();}}};
+ fill(band.mid,band.hi,'rgba(232,193,61,0.28)','rgba(232,193,61,0.7)','#9a7400','Buffer');}};
 function syncX(src,dst){if(syncing)return;syncing=true;
  dst.zoomScale('x',{min:src.scales.x.min,max:src.scales.x.max},'none');syncing=false;}
 const baseX={grid:{color:'#eee'},ticks:{maxTicksLimit:14,color:'#999',autoSkip:true}};
@@ -82,7 +70,7 @@ function opt(t,other){return{responsive:true,maintainAspectRatio:false,animation
    onZoom:({chart})=>syncX(chart,other())}}},
  scales:{x:baseX,y:{grid:{color:'#eee'},ticks:{color:'#999',callback:v=>v.toLocaleString()},afterFit:s=>{s.width=72;}}}};}
 let c1,c2,curP=N-1,futureAlpha=0.15;
-const fadeEl=document.getElementById('fade');
+const fadeEl=document.getElementById('fade'),strictEl=document.getElementById('strict');
 function hexA(hex,a){const n=parseInt(hex.length===4?hex.slice(1).split('').map(c=>c+c).join(''):hex.slice(1),16);
  return'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')';}
 function mk(id,series,col,t,other){return new Chart(document.getElementById(id),{type:'line',
@@ -100,57 +88,51 @@ document.getElementById('reset').onclick=()=>{c1.resetZoom();c2.resetZoom();};
   ch.pan({x:dx},undefined,'none');syncX(ch,ch===c1?c2:c1);});
  window.addEventListener('mouseup',e=>{if(e.button===2)panning=false;});});
 // ---- Original-algorithm constants (src/config.ts) ----
-const PIV_L=10,PIV_R=2; // RANGE_LOWER / RANGE_UPPER are now read from the input fields (#rl / #ru)
-// Pivot tests mirror detectPivotHigh/detectPivotLow in src/techutils.ts:
-// left neighbours must be strictly beyond the pivot, right neighbours may equal it.
+const PIV_L=10,PIV_R=2; // pivot left/right bars (src/config.ts)
+// Pivot tests mirror isPivotHighAt/isPivotLowAt in src/techutils.ts:
+// left neighbours may equal the pivot, right neighbours must be strictly beyond it.
 function isPivotHigh(a,i,left,right){if(i-left<0||i+right>=a.length)return false;
-  for(let k=1;k<=left;k++)if(a[i-k]>=a[i])return false;
-  for(let k=1;k<=right;k++)if(a[i+k]>a[i])return false;return true;}
+  for(let k=1;k<=left;k++)if(a[i-k]>a[i])return false;
+  for(let k=1;k<=right;k++)if(a[i+k]>=a[i])return false;return true;}
 function isPivotLow(a,i,left,right){if(i-left<0||i+right>=a.length)return false;
-  for(let k=1;k<=left;k++)if(a[i-k]<=a[i])return false;
-  for(let k=1;k<=right;k++)if(a[i+k]<a[i])return false;return true;}
-// inRange() helper (src/techutils.ts): bars since the reference value last occurred.
-function lastIdxUpTo(a,val,p){for(let i=p;i>=0;i--)if(a[i]===val)return i;return -1;}
-// Faithful port of detectSignals() in src/main.ts (regular + hidden bull/bear divergences).
-// Window = obvOscHistory.slice(-LB_L,-LB_R)  ->  indices [p-LB_L+1 .. p-LB_R].
-// The oscillator reference is the PLAIN min/max over that window (Math.min/Math.max),
-// and price is compared against its OWN min/max over the same window — independently.
-function detect(p){const LB_L=+mx.value,LB_R=+mn.value,RANGE_LOWER=+rl.value,RANGE_UPPER=+ru.value;
- const winStart=p-LB_L+1,winEnd=p-LB_R;        // inclusive scan range (matches the slice)
- const lo=p-LB_L,mid=p-LB_R;                    // band display edges (search window)
- if(winStart<0||winEnd<winStart)
-  return{type:'none',kind:null,refP:-1,refO:-1,oHi:-1,oLo:-1,pHi:-1,pLo:-1,lo:Math.max(0,lo),mid:Math.max(0,mid)};
- // Plain min/max of the oscillator AND of price over the window, computed independently.
- let oHi=winStart,oLo=winStart,pHi=winStart,pLo=winStart;
- for(let i=winStart;i<=winEnd;i++){
-  if(D.osc[i]>=D.osc[oHi])oHi=i;
-  if(D.osc[i]<=D.osc[oLo])oLo=i;
-  if(D.price[i]>=D.price[pHi])pHi=i;
-  if(D.price[i]<=D.price[pLo])pLo=i;}
- const prevObvHigh=D.osc[oHi],prevObvLow=D.osc[oLo];
- const prevPriceHigh=D.price[pHi],prevPriceLow=D.price[pLo];
- // Current-candle oscillator pivot confirmation (PIV_R bars back) + sign gate (PHCond/PLCond).
- const pivIdx=p-PIV_R;
- const PHCond=D.osc[p]>0&&isPivotHigh(D.osc,pivIdx,PIV_L,PIV_R);
- const PLCond=D.osc[p]<0&&isPivotLow(D.osc,pivIdx,PIV_L,PIV_R);
- // inRange(RANGE_LOWER..RANGE_UPPER): bars since the reference extreme last appeared.
- const barsHi=(p+1)-lastIdxUpTo(D.osc,prevObvHigh,p);
- const barsLo=(p+1)-lastIdxUpTo(D.osc,prevObvLow,p);
- const inRangeHi=barsHi>=RANGE_LOWER&&barsHi<=RANGE_UPPER;
- const inRangeLo=barsLo>=RANGE_LOWER&&barsLo<=RANGE_UPPER;
- // Regular bearish: price higher high, oscillator lower high, confirmed pivot high.
- if(PHCond&&D.osc[p]<prevObvHigh&&inRangeHi&&D.price[p]>prevPriceHigh)
-  return{type:'bear',kind:'regular',refP:pHi,refO:oHi,oHi,oLo,pHi,pLo,lo,mid};
- // Hidden bearish: price lower high, oscillator higher high, confirmed pivot high.
- if(PHCond&&D.osc[p]>prevObvHigh&&inRangeHi&&D.price[p]<prevPriceHigh)
-  return{type:'bear',kind:'hidden',refP:pHi,refO:oHi,oHi,oLo,pHi,pLo,lo,mid};
- // Regular bullish: price lower low, oscillator higher low, confirmed pivot low.
- if(PLCond&&D.osc[p]>prevObvLow&&inRangeLo&&D.price[p]<prevPriceLow)
-  return{type:'bull',kind:'regular',refP:pLo,refO:oLo,oHi,oLo,pHi,pLo,lo,mid};
- // Hidden bullish: price higher low, oscillator lower low, confirmed pivot low.
- if(PLCond&&D.osc[p]<prevObvLow&&inRangeLo&&D.price[p]>prevPriceLow)
-  return{type:'bull',kind:'hidden',refP:pLo,refO:oLo,oHi,oLo,pHi,pLo,lo,mid};
- return{type:'none',kind:null,refP:-1,refO:-1,oHi,oLo,pHi,pLo,lo,mid};}
+  for(let k=1;k<=left;k++)if(a[i-k]<a[i])return false;
+  for(let k=1;k<=right;k++)if(a[i+k]<=a[i])return false;return true;}
+// Port of detectSignals() + findDivergenceReference() in src/main.ts.
+//  - Current side  = the "anchor": the oscillator pivot PIV_R bars back (p - PIV_R).
+//  - Reference     = the MOST RECENT earlier pivot inside the lookback window
+//                    [p-LB_L+1 .. p-LB_R] that forms a valid divergence with the anchor.
+// STRICT_DIV toggle (the #strict checkbox = STRICT_DIV in src/config.ts):
+//  - false (default): only the OSCILLATOR must pivot at the anchor and the reference.
+//  - true:            price must pivot too — pivot on BOTH oscillator AND price, both ends.
+function detect(p){const LB_L=+mx.value,LB_R=+mn.value,STRICT=strictEl.checked;
+ const lo=p-LB_L,mid=p-LB_R;                     // search-window band edges
+ const winStart=p-LB_L+1,winEnd=p-LB_R;          // reference scan range (newest = winEnd)
+ const anchor=p-PIV_R;                            // structural anchor pivot
+ const none={type:'none',kind:null,ref:-1,anchor,lo:Math.max(0,lo),mid:Math.max(0,mid)};
+ if(winStart<0||winEnd<winStart||anchor<0)return none;
+ // Anchor gate: oscillator must pivot (sign-gated); in strict mode price must pivot there too.
+ const oscPl=D.osc[anchor]<0&&isPivotLow(D.osc,anchor,PIV_L,PIV_R)&&(!STRICT||isPivotLow(D.price,anchor,PIV_L,PIV_R));
+ const oscPh=D.osc[anchor]>0&&isPivotHigh(D.osc,anchor,PIV_L,PIV_R)&&(!STRICT||isPivotHigh(D.price,anchor,PIV_L,PIV_R));
+ if(!oscPl&&!oscPh)return none;
+ const aP=D.price[anchor],aO=D.osc[anchor];
+ // Scan the window newest -> oldest; return the first qualifying pivot that diverges vs the anchor.
+ // Reference must be an oscillator pivot (and, in strict mode, a price pivot too).
+ const findRef=(bull,hidden)=>{
+  for(let i=winEnd;i>=winStart;i--){
+   const oscPiv=bull?isPivotLow(D.osc,i,PIV_L,PIV_R):isPivotHigh(D.osc,i,PIV_L,PIV_R);
+   const prcPiv=!STRICT||(bull?isPivotLow(D.price,i,PIV_L,PIV_R):isPivotHigh(D.price,i,PIV_L,PIV_R));
+   if(!oscPiv||!prcPiv)continue;
+   const rP=D.price[i],rO=D.osc[i];
+   const ok=hidden?(bull?aP>rP&&aO<rO:aP<rP&&aO>rO):(bull?aP<rP&&aO>rO:aP>rP&&aO<rO);
+   if(ok)return i;}
+  return -1;};
+ if(oscPl){                                       // pivot low -> bullish checks
+  let r=findRef(true,false);if(r>=0)return{type:'bull',kind:'regular',ref:r,anchor,lo,mid};
+  r=findRef(true,true);if(r>=0)return{type:'bull',kind:'hidden',ref:r,anchor,lo,mid};}
+ if(oscPh){                                       // pivot high -> bearish checks
+  let r=findRef(false,false);if(r>=0)return{type:'bear',kind:'regular',ref:r,anchor,lo,mid};
+  r=findRef(false,true);if(r>=0)return{type:'bear',kind:'hidden',ref:r,anchor,lo,mid};}
+ return none;}
 function segDS(series,ref,p,col){const arr=new Array(N).fill(null);arr[ref]=series[ref];arr[p]=series[p];
  return{data:arr,borderColor:col,borderWidth:2,borderDash:[5,4],spanGaps:true,tension:0,
  pointRadius:arr.map(v=>v==null?0:5),pointBackgroundColor:col};}
@@ -166,14 +148,13 @@ function buildCandidates(){cands=[];let last='none';
   if(d.type!=='none'&&key!==last)cands.push({i:p,type:d.type,kind:d.kind});last=key;}
  cand.innerHTML='<option value="-1">— '+cands.length+' candidates —</option>'+
   cands.map((c,k)=>'<option value="'+k+'">'+(k+1)+'. '+D.labels[c.i]+' · '+divLabel(c.type,c.kind)+'</option>').join('');}
-function update(){const p=+pt.value;curP=p;futureAlpha=1-Math.max(0,Math.min(100,+fadeEl.value))/100;const{type,kind,refP,refO,oHi,oLo,pHi,pLo,lo,mid}=detect(p);
- band={lo,mid,hi:p,rFar:p-(+ru.value),rNear:p-(+rl.value)};ptlbl.textContent=D.labels[p];
+function update(){const p=+pt.value;curP=p;futureAlpha=1-Math.max(0,Math.min(100,+fadeEl.value))/100;const{type,kind,ref,anchor,lo,mid}=detect(p);
+ band={lo,mid,hi:p};ptlbl.textContent=D.labels[p];
  const col=type==='bear'?'#c00000':type==='bull'?'#2e8b2e':'#999';
  res.textContent=type==='none'?'No divergence':divLabel(type,kind)+' divergence';
  res.style.background=type==='none'?'#eee':col;res.style.color=type==='none'?'#666':'#fff';
- [[c1,D.price,refP,[pHi,pLo]],[c2,D.osc,refO,[oHi,oLo]]].forEach(([c,s,ref,piv])=>{c.data.datasets=[c.data.datasets[0]];
-  if(ref>=0)c.data.datasets.push(segDS(s,ref,p,col));
-  c.data.datasets.push(pivDS(s,piv,'#e69500'));
+ [[c1,D.price],[c2,D.osc]].forEach(([c,s])=>{c.data.datasets=[c.data.datasets[0]];
+  if(ref>=0){c.data.datasets.push(segDS(s,ref,anchor,col));c.data.datasets.push(pivDS(s,[ref,anchor],'#e69500'));}
   c.data.datasets.push(curDS(s,p));c.update('none');});}
 function jumpTo(i){pt.value=i;update();const a=Math.max(0,i-90),b=Math.min(N-1,i+25);
  [c1,c2].forEach(c=>c.zoomScale('x',{min:a,max:b},'none'));}
@@ -183,6 +164,7 @@ function step(d){let k=+cand.value;k=Math.max(0,Math.min(cands.length-1,(k<0?0:k
 document.getElementById('prev').onclick=()=>step(-1);
 document.getElementById('next').onclick=()=>step(1);
 [pt,fadeEl].forEach(e=>e.addEventListener('input',update));
-[mn,mx,document.getElementById('rl'),document.getElementById('ru')].forEach(e=>e.addEventListener('input',()=>{buildCandidates();update();}));
+[mn,mx].forEach(e=>e.addEventListener('input',()=>{buildCandidates();update();}));
+strictEl.addEventListener('change',()=>{buildCandidates();update();});
 buildCandidates();update();
 </script></body></html>
